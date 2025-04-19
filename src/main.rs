@@ -154,7 +154,9 @@ impl<T: Ord> Edge<T> {
 struct Hamiltonian(Graph);
 
 impl Hamiltonian {
-  fn new(order: usize, chords: Vec<(usize, usize)>) -> Self {
+  fn new(order: usize, mut chords: Vec<(usize, usize)>) -> Self {
+    chords.sort_by(|(i0, j0), (i1, j1)| i0.cmp(i1).then(j0.cmp(j1)));
+
     assert!(
       chords
         .iter()
@@ -221,6 +223,30 @@ impl Hamiltonian {
       })
       .collect();
     Hamiltonian::new(cycle.len(), chords)
+  }
+
+  fn multinomial(code: &str) -> Self {
+    let elements: Vec<&str> = code
+      .split(|c: char| c == ',' || c.is_whitespace())
+      .map(|s| s.trim())
+      .filter(|s| !s.is_empty())
+      .collect();
+
+    let mut start: HashMap<&str, usize> = HashMap::new();
+    let mut chords: Vec<(usize, usize)> = Vec::new();
+
+    for (i, &label) in elements.iter().enumerate() {
+      if let Some(&prev) = start.get(label) {
+        chords.push((prev, i));
+        start.remove(label);
+      } else {
+        start.insert(label, i);
+      }
+    }
+
+    assert!(start.is_empty(), "Unpaired labels found in Gauss code");
+
+    Hamiltonian::new(elements.len(), chords)
   }
 
   fn chords(&self) -> &Vec<(usize, usize)> {
@@ -623,9 +649,12 @@ mod tests {
       Point(1, 1, 0),
     ]);
 
-    // Unclear relation between lattice embedding of knots and crossing number within the former
-    assert_eq!(hopf_link.minimum_crossings().0, 0);
-    assert_eq!(trefoil.minimum_crossings().0, 11);
+    // Knots defined within a polyhedra's surface constrain its genus
+    // V - E + F = 2 - G (Euler characteristic)
+
+    // Relation between lattice embedding of knots and crossing number within the former
+    assert_eq!(hopf_link.minimum_crossings().0, 0); // = 0 is unexpected
+    assert_eq!(trefoil.minimum_crossings().0, 11); // ≥ 1 is exptected
 
     let map = HashMap::from([
       ((0, 0), ("2×2×2".to_owned(), Hamiltonian::torus(2, None))), // Note: non-toroidal and toroidal 2x2x2 lattices are equivalent
@@ -651,6 +680,47 @@ mod tests {
       ((3, 1), (k_label("6,6"), Hamiltonian::complete_bipartite(6))),
     ]);
     write("exports/layout.svg", &plot(map, PADDING));
+  }
+
+  #[test]
+  fn test_multinomial() {
+    let cases = vec![
+      ("1,2,3,1,2,3", 6, vec![(0, 3), (1, 4), (2, 5)]),
+      ("a b a c b c", 6, vec![(0, 2), (1, 4), (3, 5)]),
+      ("1 2 3 4 1 3 2 4", 8, vec![(0, 4), (1, 6), (2, 5), (3, 7)]),
+    ];
+
+    for (code, expected_order, expected_chords) in cases {
+      let h = Hamiltonian::multinomial(code);
+      assert_eq!(h.0.order, expected_order, "Order mismatch for {}", code);
+      assert_eq!(h.chords(), &expected_chords, "Chords mismatch for {}", code);
+    }
+
+    // Experiment with Gauss code of knots
+    let map = HashMap::from([
+      (
+        (0, 0),
+        (
+          "Trefoil (2,3)".to_owned(),
+          Hamiltonian::multinomial("1,2,3,1,2,3"),
+        ),
+      ),
+      (
+        (1, 0),
+        (
+          "Trefoil (2,5)".to_owned(),
+          Hamiltonian::multinomial("1,2,3,4,5,1,2,3,4,5"),
+        ),
+      ),
+      (
+        (2, 0),
+        (
+          "Trefoil (2,7)".to_owned(),
+          Hamiltonian::multinomial("1,2,3,4,5,6,7,1,2,3,4,5,6,7"),
+        ),
+      ),
+    ]);
+    write("exports/nom.svg", &plot(map, PADDING));
   }
 }
 
